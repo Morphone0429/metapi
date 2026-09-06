@@ -3733,10 +3733,7 @@ textarea {
 }
 
 [data-theme="dark"] .login-shell {
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 34%),
-    radial-gradient(circle at right 18%, rgba(34, 211, 238, 0.12), transparent 30%),
-    linear-gradient(180deg, #0d1320 0%, #0a1018 100%);
+  background: var(--color-bg);
 }
 
 .login-surface {
@@ -3755,12 +3752,26 @@ textarea {
 }
 
 [data-theme="dark"] .login-surface {
-  background:
-    linear-gradient(145deg, rgba(15, 23, 42, 0.88), rgba(10, 18, 30, 0.94));
+  background: var(--color-bg-card);
   border-color: rgba(148, 163, 184, 0.12);
   box-shadow:
     0 24px 80px rgba(2, 6, 23, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .login-brand-panel-light,
+[data-theme="dark"] .login-auth-stage {
+  background: var(--color-bg);
+}
+
+[data-theme="dark"] .login-icon-link,
+[data-theme="dark"] .login-doc-link {
+  background: var(--color-bg-card);
+}
+
+[data-theme="dark"] .login-auth-input {
+  background: var(--color-bg);
+  border-color: var(--color-border);
 }
 
 .login-brand-panel {
