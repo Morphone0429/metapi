@@ -1,3 +1,8 @@
+const INSUFFICIENT_BALANCE_PATTERNS: RegExp[] = [
+  /provider\s+balance\s+is\s+insufficient/i,
+  /insufficient\s+balance/i,
+];
+
 const MODEL_UNSUPPORTED_PATTERNS: RegExp[] = [
   /当前\s*api\s*不支持所选模型/i,
   /不支持所选模型/i,
@@ -88,6 +93,7 @@ export function shouldRetryProxyRequest(status: number, upstreamErrorText?: stri
   if (status >= 500) return true;
   if (status === 408 || status === 409 || status === 425 || status === 429) return true;
   if (status === 401 || status === 403) return true;
+  if (status === 402) return matchesAnyPattern(INSUFFICIENT_BALANCE_PATTERNS, upstreamErrorText);
   if (isModelUnsupportedErrorMessage(upstreamErrorText)) return true;
   if (matchesAnyPattern(NON_RETRYABLE_REQUEST_PATTERNS, upstreamErrorText)) return false;
   if (matchesAnyPattern(RETRYABLE_CHANNEL_LOCAL_PATTERNS, upstreamErrorText)) return true;

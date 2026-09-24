@@ -8,6 +8,15 @@ describe('proxyRetryPolicy', () => {
     expect(shouldRetryProxyRequest(503, 'service unavailable')).toBe(true);
   });
 
+  it('retries 402 only for upstream insufficient-balance messages', () => {
+    expect(shouldRetryProxyRequest(402, 'Upstream returned HTTP 402: Provider balance is insufficient')).toBe(true);
+    expect(shouldRetryProxyRequest(402, 'Upstream returned HTTP 402: INSUFFICIENT   BALANCE')).toBe(true);
+    expect(shouldRetryProxyRequest(402, 'quota exceeded')).toBe(false);
+    expect(shouldRetryProxyRequest(402, 'payment required')).toBe(false);
+    expect(shouldRetryProxyRequest(402, 'unsupported model')).toBe(false);
+    expect(shouldRetryProxyRequest(400, 'Provider balance is insufficient')).toBe(false);
+  });
+
   it('retries on model unsupported messages from upstream', () => {
     expect(
       shouldRetryProxyRequest(400, '{"error":"当前 API 不支持所选模型 claude-sonnet-4-5-20250929","type":"error"}'),
