@@ -87,6 +87,7 @@ import {
   canRetryChannelSelection,
   getTesterForcedChannelId,
 } from '../channelSelection.js';
+import { sanitizeOutboundToolSchemas } from '../../transformers/shared/toolSchemaSanitize.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -341,6 +342,10 @@ export async function handleChatSurfaceRequest(
     }
   }
   const conversationFileSummary = summarizeConversationFileInputsInOpenAiBody(resolvedOpenAiBody);
+  // 出站前归一化工具参数 Schema：修复 Codex 等客户端缺 type:'object' 导致严格上游 400
+  if (isRecord(resolvedOpenAiBody) && Array.isArray(resolvedOpenAiBody.tools)) {
+    resolvedOpenAiBody.tools = sanitizeOutboundToolSchemas(resolvedOpenAiBody.tools);
+  }
   const hasNonImageFileInput = conversationFileSummary.hasDocument;
   const wantsContinuationAwareResponses = (
     downstreamFormat === 'claude'
