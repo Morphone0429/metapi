@@ -62,6 +62,45 @@ describe('proxyRetryPolicy', () => {
     ).toBe(false);
   });
 
+  it('retries when model does not support image/vision input (channel capability limit)', () => {
+    expect(
+      shouldRetryProxyRequest(400, 'Model GLM-5.3-Flash does not support image input. Remove the image content or use a vision-capable model.'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'does not support vision'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'model does not support multimodal input'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'vision-capable model required'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, '不支持图片输入'),
+    ).toBe(true);
+  });
+
+  it('retries on tool-protocol mismatch (channel capability limit)', () => {
+    expect(
+      shouldRetryProxyRequest(400, 'Upstream returned HTTP 400: No tool output found for function call fc_manyv0O0IO7zKvU8e2QeSjGI.'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'No tool output found for function call fc_abc123'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'missing tool_result for tool_use'),
+    ).toBe(true);
+    expect(
+      shouldRetryProxyRequest(400, 'tool result is required'),
+    ).toBe(true);
+  });
+
+  it('keeps plain 400 request-shape errors non-retryable', () => {
+    expect(shouldRetryProxyRequest(400, 'invalid request body')).toBe(false);
+    expect(shouldRetryProxyRequest(400, 'validation failed')).toBe(false);
+    expect(shouldRetryProxyRequest(400, 'unprocessable payload')).toBe(false);
+  });
+
   it('aborts same-site endpoint fallback on rate-limit and quota responses', () => {
     expect(
       shouldAbortSameSiteEndpointFallback(429, '{"error":{"message":"rate limit exceeded"}}'),

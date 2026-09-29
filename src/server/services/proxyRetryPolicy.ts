@@ -20,6 +20,15 @@ const MODEL_UNSUPPORTED_PATTERNS: RegExp[] = [
   /you\s+do\s+not\s+have\s+access\s+to\s+the\s+model/i,
 ];
 
+const MODEL_CONTENT_UNSUPPORTED_PATTERNS: RegExp[] = [
+  /does\s+not\s+support\s+(image|image[_\s-]input|vision|multimodal|multimodal[_\s-]input)/i,
+  /vision[_\s-]capable\s+model/i,
+  /does\s+not\s+support\s+(audio|video|file)[_\s-]input/i,
+  /不支持.*图片/i,
+  /不支持.*视觉/i,
+  /不支持.*多模态/i,
+];
+
 export const RETRYABLE_TIMEOUT_PATTERNS: RegExp[] = [
   /(request timed out|connection timed out|read timeout|first byte timeout|\btimed out\b)/i,
 ];
@@ -83,6 +92,39 @@ function isModelUnsupportedErrorMessage(rawMessage?: string | null): boolean {
   return MODEL_UNSUPPORTED_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * 识别「模型不支持该内容类型」类错误（图片 / vision / 多模态）。
+ *
+ * 这类错误通常是中转站点自行限制了多模态能力，而不是模型本身不支持
+ * （如 GLM-5.3-Flash 官方支持图片，但部分站点屏蔽），属于渠道级能力缺陷：
+ * 换一个支持图片的渠道即可成功，因此应触发 failover 而不是把 400 透传给客户端。
+ */
+/**
+ * 识别「工具调用协议不匹配」类错误。
+ *
+ * 这类错误说明本渠道上游对工具调用的结构校验比转换后请求更严格，
+ * 换一个协议兼容性更好的渠道即可成功，属于渠道级能力缺陷，
+ * 因此应触发 failover，而不是把 400 透传给客户端。
+ */
+const TOOL_PROTOCOL_MISMATCH_PATTERNS: RegExp[] = [
+  /no\s+tool\s+output\s+found\s+for\s+function\s+call/i,
+  /tool_use[_\s-]?id[_\s-]?without\s+tool_result/i,
+  /missing\s+tool[_ ]?(result|output|response)/i,
+  /tool[_ ]?(result|output)[_\s-]?(is\s+)?(required|missing)/i,
+];
+
+function isModelContentUnsupportedErrorMessage(rawMessage?: string | null): boolean {
+  const text = (rawMessage || '').trim();
+  if (!text) return false;
+  return MODEL_CONTENT_UNSUPPORTED_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isToolProtocolMismatchErrorMessage(rawMessage?: string | null): boolean {
+  const text = (rawMessage || '').trim();
+  if (!text) return false;
+  return TOOL_PROTOCOL_MISMATCH_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function matchesAnyPattern(patterns: RegExp[], rawMessage?: string | null): boolean {
   const text = (rawMessage || '').trim();
   if (!text) return false;
@@ -95,6 +137,8 @@ export function shouldRetryProxyRequest(status: number, upstreamErrorText?: stri
   if (status === 401 || status === 403) return true;
   if (status === 402) return matchesAnyPattern(INSUFFICIENT_BALANCE_PATTERNS, upstreamErrorText);
   if (isModelUnsupportedErrorMessage(upstreamErrorText)) return true;
+  if (isModelContentUnsupportedErrorMessage(upstreamErrorText)) return true;
+  if (isToolProtocolMismatchErrorMessage(upstreamErrorText)) return true;
   if (matchesAnyPattern(NON_RETRYABLE_REQUEST_PATTERNS, upstreamErrorText)) return false;
   if (matchesAnyPattern(RETRYABLE_CHANNEL_LOCAL_PATTERNS, upstreamErrorText)) return true;
   if (status === 400 || status === 404 || status === 422) return false;
