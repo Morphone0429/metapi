@@ -16,7 +16,8 @@ import { clearSnapshotCache } from './snapshotCacheService.js';
 const USAGE_PROJECTOR_KEY = 'usage-aggregates-v1';
 const PROJECTION_BATCH_SIZE = 1_000;
 const PROJECTION_MAX_BATCHES_PER_PASS = 120;
-const PROJECTION_INTERVAL_MS = 5_000;
+// 低 IO：投影间隔可用 env 拉长（默认 5s；拉到 60s~300s 可大幅降低 SQLite 写入）
+const PROJECTION_INTERVAL_MS = Math.max(5_000, Number(process.env.USAGE_PROJECTION_INTERVAL_MS || 5_000));
 const PROJECTION_LEASE_MS = 10 * 60_000;
 
 type ProjectionCheckpointRow = typeof schema.analyticsProjectionCheckpoints.$inferSelect;

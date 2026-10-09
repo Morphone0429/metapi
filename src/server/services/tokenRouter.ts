@@ -2509,6 +2509,7 @@ export class TokenRouter {
       totalLatencyMs: nextTotalLatencyMs,
       totalCost: nextTotalCost,
       lastUsedAt: nowIso,
+      lastSelectedAt: ch.lastSelectedAt ?? nowIso,
       cooldownUntil: null,
       lastFailAt: null,
       consecutiveFailCount: 0,
@@ -2767,6 +2768,7 @@ export class TokenRouter {
     await db.update(schema.routeChannels).set({
       failCount,
       lastFailAt: nowIso,
+      lastSelectedAt: nowIso,
       consecutiveFailCount,
       cooldownLevel,
       cooldownUntil,
@@ -3393,11 +3395,9 @@ export class TokenRouter {
   }
 
   private async recordChannelSelection(channelId: number): Promise<void> {
+    // 低 IO：last_selected_at 只更新内存缓存，随成功/失败记账的 UPDATE 一同落库，
+    // 避免每个请求多一次独立的 route_channels UPDATE
     const nowIso = new Date().toISOString();
-    await db.update(schema.routeChannels).set({
-      lastSelectedAt: nowIso,
-    }).where(eq(schema.routeChannels.id, channelId)).run();
-
     patchCachedChannel(channelId, (channel) => {
       channel.lastSelectedAt = nowIso;
     });

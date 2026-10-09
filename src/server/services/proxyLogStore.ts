@@ -257,6 +257,13 @@ export function isMissingProxyLogStreamTimingColumnsError(error: unknown): boole
 }
 
 export async function insertProxyLog(input: ProxyLogInsertInput): Promise<void> {
+  // [低IO采样记账] PROXY_LOG_SAMPLE_RATE 控制成功请求的落库比例（0~1，默认 1=全记）。
+  // 失败请求(status != success)永远全记 —— 额度告警/自动隔离依赖失败行。
+  // 采样时按概率丢弃成功行：统计看板用采样率修正即可。
+  const sampleRate = Math.min(1, Math.max(0, Number(process.env.PROXY_LOG_SAMPLE_RATE ?? 1)));
+  if (sampleRate < 1 && (input.status ?? "").toLowerCase() === "success") {
+    if (Math.random() >= sampleRate) return;
+  }
   const baseValues = {
     routeId: input.routeId ?? null,
     channelId: input.channelId ?? null,

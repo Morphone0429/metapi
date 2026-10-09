@@ -1371,6 +1371,44 @@ function initSqliteDb() {
   sqliteConnection = sqlite;
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
+  // [SQLTRACE] 临时诊断钩子（SQL_TRACE=1 启用）：统计写 SQL 频次, 每 15s 打印窗口 TOP
+  // 用于定位「每 60s 一次 135MB 大事务」的来源; 定位后移除本块与 SQL_TRACE env
+  if (String(process.env.SQL_TRACE || '') === '1') {
+    const traceStats = new Map();
+    let traceWindowStart = Date.now();
+    const origPrepare = (Database as any).prototype.prepare;
+    (Database as any).prototype.prepare = function (sql: string, ...rest: unknown[]) {
+      const stmt = origPrepare.call(this, sql, ...rest);
+      const normalized = String(sql).replace(/\s+/g, ' ').trim().slice(0, 120);
+      const isWrite = /^(insert|update|delete|replace|create|drop|pragma wal)/i.test(normalized);
+      if (!isWrite) return stmt;
+      const origRun = stmt.run?.bind(stmt);
+      if (!origRun) return stmt;
+      (stmt as any).run = (...args: unknown[]) => {
+        traceStats.set(normalized, (traceStats.get(normalized) || 0) + 1);
+        const now = Date.now();
+        if (now - traceWindowStart >= 15_000) {
+          const top = [...traceStats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+          for (const [k, n] of top) console.log(`[SQLTRACE] ${n}x ${k}`);
+          traceStats.clear();
+          traceWindowStart = now;
+        }
+        return origRun(...args);
+      };
+      return stmt;
+    };
+    console.log('[SQLTRACE] enabled');
+  }
+  // 低 IO 调优（METAPI_LOW_IO=1 启用）：降低高频小事务场景下的物理写放大
+  //   wal_autocheckpoint=4000 → WAL 攒到 ~16MB 再 checkpoint，减少每分钟整库回写
+  //   journal_size_limit=64MB → 限制 WAL 文件无界增长
+  //   synchronous=NORMAL → WAL 模式下安全性与 FULL 几乎等价，减少 fsync 次数
+  if (String(process.env.METAPI_LOW_IO || '') === '1') {
+    const checkpointPages = Math.max(1000, Number(process.env.METAPI_WAL_CHECKPOINT_PAGES || 4000));
+    sqlite.pragma(`wal_autocheckpoint = ${checkpointPages}`);
+    sqlite.pragma('journal_size_limit = 268435456');
+    sqlite.pragma('synchronous = NORMAL');
+  }
 
   ensureTokenManagementSchema();
   ensureSiteStatusSchema();
