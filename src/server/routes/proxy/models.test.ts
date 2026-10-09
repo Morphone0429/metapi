@@ -135,6 +135,26 @@ describe('/v1/models route', () => {
     expect(ids).not.toContain('orphan-model');
   });
 
+  it('does not expose a retained alias route without channels', async () => {
+    await db.insert(schema.tokenRoutes).values({
+      modelPattern: 'claude-opus-5-5',
+      displayName: 'claude-opus-5.5',
+      modelMapping: JSON.stringify({ 'claude-opus-5.5': 'claude-opus-5-5' }),
+      enabled: true,
+    }).run();
+    await db.insert(schema.downstreamApiKeys).values({
+      name: 'managed-key', key: 'sk-alias-empty', enabled: true,
+      supportedModels: JSON.stringify(['claude-opus-5.5']),
+    }).run();
+
+    const response = await app.inject({
+      method: 'GET', url: '/v1/models',
+      headers: { authorization: 'Bearer sk-alias-empty' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { data: Array<{ id: string }> }).data).toEqual([]);
+  });
+
   it('keeps global proxy token unrestricted when no managed key matches', async () => {
     const site = await db.insert(schema.sites).values({
       name: 'global-site',

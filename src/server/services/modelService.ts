@@ -263,6 +263,14 @@ function isExactModelPattern(modelPattern: string): boolean {
   return !/[\*\?]/.test(normalized);
 }
 
+function hasAliasMetadata(route: Pick<typeof schema.tokenRoutes.$inferSelect, 'modelPattern' | 'displayName' | 'modelMapping'>): boolean {
+  const pattern = (route.modelPattern || '').trim();
+  const displayName = (route.displayName || '').trim();
+  const modelMapping = (route.modelMapping || '').trim();
+  return (displayName.length > 0 && displayName !== pattern)
+    || (modelMapping.length > 0 && modelMapping !== '{}');
+}
+
 async function withTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs: number,
@@ -1620,6 +1628,16 @@ export async function rebuildTokenRoutesFromAvailability(
     const routeChannelCount = channels.filter((channel) => channel.routeId === route.id).length;
     if (routeChannelCount > 0) {
       removedChannels += routeChannelCount;
+    }
+
+    // 带自定义展示名/映射的精确路由是别名桥接的稳定身份。
+    // 暂时没有活跃候选时只清空渠道，恢复后复用原路由，避免别名元数据漂移。
+    if (hasAliasMetadata(route)) {
+      if (routeChannelCount > 0) {
+        await db.delete(schema.routeChannels).where(eq(schema.routeChannels.routeId, route.id)).run();
+        affectedExactRouteIds.add(route.id);
+      }
+      continue;
     }
 
     const deleted = (await db.delete(schema.tokenRoutes).where(eq(schema.tokenRoutes.id, route.id)).run()).changes;

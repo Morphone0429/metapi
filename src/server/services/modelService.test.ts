@@ -335,6 +335,50 @@ describe('rebuildTokenRoutesFromAvailability', () => {
     expect(wildcardRouteAfter).toBeDefined();
   });
 
+  it('preserves aliases on a temporarily unavailable exact route and reuses it when models return', async () => {
+    const site = await db.insert(schema.sites).values({
+      name: 'alias-site', url: 'https://alias.example.com', platform: 'new-api', status: 'active',
+    }).returning().get();
+    const account = await db.insert(schema.accounts).values({
+      siteId: site.id, accessToken: '', apiToken: 'sk-alias-route', status: 'active',
+      extraConfig: JSON.stringify({ credentialMode: 'apikey' }),
+    }).returning().get();
+    const route = await db.insert(schema.tokenRoutes).values({
+      modelPattern: 'claude-opus-5-5',
+      displayName: 'claude-opus-5.5',
+      modelMapping: JSON.stringify({ 'claude-opus-5.5': 'claude-opus-5-5' }),
+      enabled: true,
+    }).returning().get();
+    await db.insert(schema.modelAvailability).values({
+      accountId: account.id, modelName: 'claude-opus-5-5', available: true,
+    }).run();
+    await rebuildTokenRoutesFromAvailability();
+    await db.update(schema.modelAvailability).set({ available: false })
+      .where(eq(schema.modelAvailability.accountId, account.id)).run();
+
+    const lost = await rebuildTokenRoutesFromAvailability();
+    const retained = await db.select().from(schema.tokenRoutes)
+      .where(eq(schema.tokenRoutes.id, route.id)).get();
+    const emptyChannels = await db.select().from(schema.routeChannels)
+      .where(eq(schema.routeChannels.routeId, route.id)).all();
+    expect(lost.removedRoutes).toBe(0);
+    expect(retained?.displayName).toBe('claude-opus-5.5');
+    expect(retained?.modelMapping).toBe(route.modelMapping);
+    expect(emptyChannels).toHaveLength(0);
+
+    await db.update(schema.modelAvailability).set({ available: true })
+      .where(eq(schema.modelAvailability.accountId, account.id)).run();
+    const recovered = await rebuildTokenRoutesFromAvailability();
+    const restored = await db.select().from(schema.tokenRoutes)
+      .where(eq(schema.tokenRoutes.modelPattern, 'claude-opus-5-5')).all();
+    const channels = await db.select().from(schema.routeChannels)
+      .where(eq(schema.routeChannels.routeId, route.id)).all();
+    expect(recovered.createdRoutes).toBe(0);
+    expect(restored).toHaveLength(1);
+    expect(restored[0]?.id).toBe(route.id);
+    expect(channels).toHaveLength(1);
+  });
+
   it('removes stale pattern-group channels when automatic rebuild deletes exact routes', async () => {
     const site = await db.insert(schema.sites).values({
       name: 'site-stale-pattern',
