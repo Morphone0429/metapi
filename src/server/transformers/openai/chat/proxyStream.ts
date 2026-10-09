@@ -14,7 +14,6 @@ type StreamReader = {
   cancel(reason?: unknown): Promise<unknown>;
   releaseLock(): void;
 };
-
 type ChatProxyStreamSessionInput = {
   downstreamFormat: DownstreamFormat;
   modelName: string;
@@ -32,6 +31,55 @@ type ChatProxyStreamResult = {
   status: 'completed' | 'failed';
   errorMessage: string | null;
 };
+
+// 与 OpenAI 官方 usage 结构对齐的零值 usage，保证严格客户端（强制要求
+// usage.total_tokens 存在）在每个中间 chunk 都能反序列化成功。
+const EMPTY_STREAM_USAGE: Record<string, unknown> = {
+  prompt_tokens: 0,
+  completion_tokens: 0,
+  total_tokens: 0,
+};
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+// 补齐 total_tokens：部分上游 usage 只带 prompt/completion 两个字段。
+function normalizeStreamUsagePayload(record: Record<string, unknown>): Record<string, unknown> {
+  const prompt = typeof record.prompt_tokens === 'number' ? record.prompt_tokens : undefined;
+  const completion = typeof record.completion_tokens === 'number' ? record.completion_tokens : undefined;
+  let total = typeof record.total_tokens === 'number' ? record.total_tokens : undefined;
+  if (total === undefined && (prompt !== undefined || completion !== undefined)) {
+    total = (prompt ?? 0) + (completion ?? 0);
+  }
+  return {
+    ...record,
+    prompt_tokens: prompt ?? 0,
+    completion_tokens: completion ?? 0,
+    total_tokens: total ?? 0,
+  };
+}
+
+// 为流式 SSE 行注入 usage：已带 usage 的行也做字段补齐（防止上游 usage 缺 total_tokens），
+// [DONE] 与不可解析行原样透传。
+function withUsageEveryChunk(
+  lines: string[],
+  usagePayload: Record<string, unknown> | null,
+): string[] {
+  return lines.map((line) => {
+    if (!line.startsWith('data: ') || line.trim() === 'data: [DONE]') return line;
+    try {
+      const payload = JSON.parse(line.slice(6)) as unknown;
+      if (!isRecordValue(payload)) return line;
+      const usage = isRecordValue(payload.usage)
+        ? normalizeStreamUsagePayload(payload.usage)
+        : (usagePayload ? normalizeStreamUsagePayload(usagePayload) : { ...EMPTY_STREAM_USAGE });
+      return `data: ${JSON.stringify({ ...payload, usage })}\n\n`;
+    } catch {
+      return line;
+    }
+  });
+}
 
 export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput) {
   const downstreamTransformer = input.downstreamFormat === 'claude'
@@ -56,6 +104,16 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
   let terminalNormalizedFinal: ReturnType<typeof normalizeOpenAiChatFinalToNormalized> | null = null;
   let forwardedDownstreamOutput = false;
   const pendingWrites: string[] = [];
+  // 仅对 openai 下游生效：累积上游各 chunk 中的 usage，供每个下行 chunk 注入。
+  const usageEveryChunkEnabled = input.downstreamFormat === 'openai' && config.proxyStreamUsageEveryChunk;
+  let streamUsagePayload: Record<string, unknown> | null = null;
+  const applyUsageEveryChunk = (lines: string[]): string[] => (
+    usageEveryChunkEnabled ? withUsageEveryChunk(lines, streamUsagePayload) : lines
+  );
+  const accumulateStreamUsage = (payload: Record<string, unknown> | undefined | null): void => {
+    if (!usageEveryChunkEnabled || !isRecordValue(payload)) return;
+    streamUsagePayload = { ...(streamUsagePayload ?? {}), ...payload };
+  };
 
   const extractFailureMessage = (payload: unknown, fallback = 'upstream stream failed'): string => {
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
@@ -221,7 +279,7 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
           }),
         ).slice(-1)[0];
         if (terminalChunk) {
-          emitLines([`data: ${JSON.stringify(terminalChunk)}\n\n`], { meaningful: true });
+          emitLines(applyUsageEveryChunk([`data: ${JSON.stringify(terminalChunk)}\n\n`]), { meaningful: true });
         }
       }
     }
@@ -274,8 +332,11 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
       if (input.downstreamFormat === 'openai' && chatAggregateState) {
         applyOpenAiChatStreamEvent(chatAggregateState, normalizedEvent);
       }
+      accumulateStreamUsage((normalizedEvent as { usagePayload?: Record<string, unknown> }).usagePayload);
       emitLines(
-        downstreamTransformer.serializeStreamEvent(normalizedEvent, streamContext, claudeContext),
+        applyUsageEveryChunk(
+          downstreamTransformer.serializeStreamEvent(normalizedEvent, streamContext, claudeContext),
+        ),
         {
           meaningful: hasMeaningfulChatAggregateOutput(),
           force: isFailurePayload,
@@ -315,8 +376,10 @@ export function createChatProxyStreamSession(input: ChatProxyStreamSessionInput)
         streamContext.model = normalizedFinal.model;
         streamContext.created = normalizedFinal.created;
         emitLines(
-          buildNormalizedFinalToOpenAiChatChunks(normalizedFinal)
-            .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`),
+          applyUsageEveryChunk(
+            buildNormalizedFinalToOpenAiChatChunks(normalizedFinal)
+              .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`),
+          ),
           { meaningful: true },
         );
       } else {

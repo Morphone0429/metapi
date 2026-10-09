@@ -154,6 +154,9 @@ export function buildConfig(env: NodeJS.ProcessEnv) {
     proxyFileRetentionPruneIntervalMinutes: Math.max(1, Math.trunc(parseNumber(env.PROXY_FILE_RETENTION_PRUNE_INTERVAL_MINUTES, 60))),
     proxyErrorKeywords: parseCsvList(env.PROXY_ERROR_KEYWORDS),
     proxyEmptyContentFailEnabled: parseBoolean(env.PROXY_EMPTY_CONTENT_FAIL, false),
+    // 流式响应为每个 SSE chunk 注入 usage（中间 chunk 为已累积值，最终 chunk 为真实 usage），
+    // 兼容反序列化强制要求 usage.total_tokens 的严格客户端；置 false 恢复标准 OpenAI 行为。
+    proxyStreamUsageEveryChunk: parseBoolean(env.PROXY_STREAM_USAGE_EVERY_CHUNK, true),
     globalBlockedBrands: [] as string[],
     globalAllowedModels: [] as string[],
     codexResponsesWebsocketBeta: parseOptionalSecret(env.CODEX_RESPONSES_WEBSOCKET_BETA) || 'responses_websockets=2026-02-06',
