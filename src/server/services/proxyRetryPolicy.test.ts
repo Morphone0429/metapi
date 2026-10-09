@@ -101,6 +101,20 @@ describe('proxyRetryPolicy', () => {
     expect(shouldRetryProxyRequest(400, 'unprocessable payload')).toBe(false);
   });
 
+  it('retries 413 payload-too-large on another channel (site body-size limit)', () => {
+    expect(
+      shouldRetryProxyRequest(413, 'Upstream returned HTTP 413: 413 Request Entity Too Large'),
+    ).toBe(true);
+    // 状态码本身足以判定，不依赖上游错误文案
+    expect(shouldRetryProxyRequest(413, null)).toBe(true);
+  });
+
+  it('aborts same-site endpoint fallback on 413 (body limit enforced at site front proxy)', () => {
+    expect(
+      shouldAbortSameSiteEndpointFallback(413, '413 Request Entity Too Large'),
+    ).toBe(true);
+  });
+
   it('aborts same-site endpoint fallback on rate-limit and quota responses', () => {
     expect(
       shouldAbortSameSiteEndpointFallback(429, '{"error":{"message":"rate limit exceeded"}}'),

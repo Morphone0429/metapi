@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetch } from 'undici';
 import type { BuiltEndpointRequest } from './endpointFlow.js';
+import { shouldAbortSameSiteEndpointFallback } from '../../services/proxyRetryPolicy.js';
 
 vi.mock('undici', async () => {
   const actual = await vi.importActual<typeof import('undici')>('undici');
@@ -271,6 +272,41 @@ describe('executeEndpointFlow', () => {
       expect(result.status).toBe(503);
       expect(result.errText).toContain('Service temporarily unavailable');
     }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips remaining same-site endpoints on 413 payload-too-large via the real policy', async () => {
+    fetchMock
+      .mockResolvedValueOnce(toUndiciResponse(new Response(JSON.stringify({
+        error: { message: '413 Request Entity Too Large', type: 'upstream_error' },
+      }), {
+        status: 413,
+        headers: { 'content-type': 'application/json' },
+      })))
+      .mockResolvedValueOnce(toUndiciResponse(new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })));
+
+    const result = await executeEndpointFlow({
+      siteUrl: 'https://example.com',
+      endpointCandidates: ['responses', 'chat'],
+      buildRequest: (endpoint) => endpoint === 'responses'
+        ? requestFor('/v1/responses')
+        : { ...requestFor('/v1/chat/completions'), endpoint },
+      shouldAbortRemainingEndpoints: (ctx: any) => shouldAbortSameSiteEndpointFallback(
+        ctx.response.status,
+        ctx.rawErrText || ctx.errText,
+      ),
+      shouldDowngrade: () => true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(413);
+      expect(result.errText).toContain('413 Request Entity Too Large');
+    }
+    // 413 是渠道/站点级请求体限制，同站其余端点不再尝试，直接交给上层换渠道
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

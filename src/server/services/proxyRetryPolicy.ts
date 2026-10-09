@@ -135,6 +135,9 @@ export function shouldRetryProxyRequest(status: number, upstreamErrorText?: stri
   if (status >= 500) return true;
   if (status === 408 || status === 409 || status === 425 || status === 429) return true;
   if (status === 401 || status === 403) return true;
+  // 413 表示请求体超出该渠道/站点的请求体上限（具体限制位置由站点部署决定），
+  // 请求本身合法，换一个限制更宽松的渠道可能成功，策略上优先跨渠道 failover。
+  if (status === 413) return true;
   if (status === 402) return matchesAnyPattern(INSUFFICIENT_BALANCE_PATTERNS, upstreamErrorText);
   if (isModelUnsupportedErrorMessage(upstreamErrorText)) return true;
   if (isModelContentUnsupportedErrorMessage(upstreamErrorText)) return true;
@@ -146,6 +149,9 @@ export function shouldRetryProxyRequest(status: number, upstreamErrorText?: stri
 }
 
 export function shouldAbortSameSiteEndpointFallback(status: number, upstreamErrorText?: string | null): boolean {
+  // 413 是渠道/站点级的请求体限制，同站其余端点通常共享同一入口限制，
+  // 轮换大概率复现；为避免无效尝试，直接跳到渠道 failover。
+  if (status === 413) return true;
   if (status < 500 && status !== 408 && status !== 429) {
     return false;
   }

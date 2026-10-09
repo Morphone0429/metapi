@@ -519,6 +519,104 @@ describe('selectSurfaceChannelForAttempt', () => {
     }));
   });
 
+  it('fails over 413 payload-too-large to another channel through the real retry policy', async () => {
+    const actual = await vi.importActual<typeof import('../../services/proxyRetryPolicy.js')>(
+      '../../services/proxyRetryPolicy.js',
+    );
+    composeProxyLogMessageMock.mockReturnValue('normalized error');
+    formatUtcSqlDateTimeMock.mockReturnValue('2026-03-21 22:00:00');
+    insertProxyLogMock.mockResolvedValue(undefined);
+    shouldRetryProxyRequestMock.mockImplementation(actual.shouldRetryProxyRequest);
+    isTokenExpiredErrorMock.mockReturnValue(false);
+    recordOauthQuotaResetHintMock.mockResolvedValue(null);
+
+    const { createSurfaceFailureToolkit } = await import('./sharedSurface.js');
+    const toolkit = createSurfaceFailureToolkit({
+      warningScope: 'chat',
+      downstreamPath: '/v1/chat/completions',
+      maxRetries: 2,
+      clientContext: null,
+      downstreamApiKeyId: 44,
+    });
+
+    const result = await toolkit.handleUpstreamFailure({
+      selected: {
+        channel: { id: 11, routeId: 22 },
+        account: { id: 33, username: 'oauth-user' },
+        site: { name: 'Aran API' },
+        actualModel: 'upstream-model',
+      },
+      requestedModel: 'glm-5.3-flash',
+      modelName: 'upstream-model',
+      status: 413,
+      errText: '[upstream:/v1/chat/completions] Upstream returned HTTP 413: 413 Request Entity Too Large',
+      rawErrText: '413 Request Entity Too Large',
+      latencyMs: 300,
+      retryCount: 0,
+    });
+
+    expect(result).toEqual({ action: 'retry' });
+    expect(reportProxyAllFailedMock).not.toHaveBeenCalled();
+    expect(insertProxyLogMock).toHaveBeenCalledWith(expect.objectContaining({
+      channelId: 11,
+      httpStatus: 413,
+      status: 'failed',
+      retryCount: 0,
+    }));
+  });
+
+  it('returns the 413 to the client when retries are exhausted through the real retry policy', async () => {
+    const actual = await vi.importActual<typeof import('../../services/proxyRetryPolicy.js')>(
+      '../../services/proxyRetryPolicy.js',
+    );
+    composeProxyLogMessageMock.mockReturnValue('normalized error');
+    formatUtcSqlDateTimeMock.mockReturnValue('2026-03-21 22:00:00');
+    insertProxyLogMock.mockResolvedValue(undefined);
+    shouldRetryProxyRequestMock.mockImplementation(actual.shouldRetryProxyRequest);
+    isTokenExpiredErrorMock.mockReturnValue(false);
+    recordOauthQuotaResetHintMock.mockResolvedValue(null);
+
+    const { createSurfaceFailureToolkit } = await import('./sharedSurface.js');
+    const toolkit = createSurfaceFailureToolkit({
+      warningScope: 'chat',
+      downstreamPath: '/v1/chat/completions',
+      maxRetries: 2,
+      clientContext: null,
+      downstreamApiKeyId: 44,
+    });
+
+    const result = await toolkit.handleUpstreamFailure({
+      selected: {
+        channel: { id: 11, routeId: 22 },
+        account: { id: 33, username: 'oauth-user' },
+        site: { name: 'Aran API' },
+        actualModel: 'upstream-model',
+      },
+      requestedModel: 'glm-5.3-flash',
+      modelName: 'upstream-model',
+      status: 413,
+      errText: 'Upstream returned HTTP 413: 413 Request Entity Too Large',
+      rawErrText: '413 Request Entity Too Large',
+      latencyMs: 300,
+      retryCount: 2,
+    });
+
+    expect(result).toEqual({
+      action: 'respond',
+      status: 413,
+      payload: {
+        error: {
+          message: 'Upstream returned HTTP 413: 413 Request Entity Too Large',
+          type: 'upstream_error',
+        },
+      },
+    });
+    expect(reportProxyAllFailedMock).toHaveBeenCalledWith({
+      model: 'glm-5.3-flash',
+      reason: 'upstream returned HTTP 413',
+    });
+  });
+
   it('keeps retryable failures on the retry path even when quota hint recording fails', async () => {
     composeProxyLogMessageMock.mockReturnValue('normalized error');
     formatUtcSqlDateTimeMock.mockReturnValue('2026-03-21 22:00:00');
