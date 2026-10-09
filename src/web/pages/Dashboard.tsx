@@ -82,6 +82,29 @@ type SiteAvailabilitySummary = {
   buckets: SiteAvailabilityBucket[];
 };
 
+const SITE_SORT_MODE_STORAGE_KEY = "metapi.dashboard.siteSortMode";
+
+type SiteSortMode = "availability" | "requests";
+
+// 从 localStorage 读取排序偏好，非法值或读取失败时回退到默认「按可用性百分比」
+function readStoredSiteSortMode(): SiteSortMode {
+  try {
+    const stored = globalThis.localStorage?.getItem(SITE_SORT_MODE_STORAGE_KEY);
+    if (stored === "requests") return "requests";
+  } catch {
+    // 忽略 localStorage 读取失败，使用默认排序。
+  }
+  return "availability";
+}
+
+function persistSiteSortMode(mode: SiteSortMode) {
+  try {
+    globalThis.localStorage?.setItem(SITE_SORT_MODE_STORAGE_KEY, mode);
+  } catch {
+    // 忽略 localStorage 写入失败，不影响当前排序。
+  }
+}
+
 function formatAvailabilityPercent(value: number | null | undefined): string {
   if (
     typeof value !== "number" ||
@@ -238,6 +261,9 @@ export default function Dashboard({
   >({});
   const [trendDays, setTrendDays] = useState(7);
   const [showInactiveSites, setShowInactiveSites] = useState(false);
+  const [siteSortMode, setSiteSortMode] = useState<SiteSortMode>(
+    readStoredSiteSortMode,
+  );
   const toast = useToast();
   const normalizedAdminName = (adminName || "").trim() || "\u7ba1\u7406\u5458";
 
@@ -517,9 +543,26 @@ export default function Dashboard({
   )
     ? insightsData.siteAvailability
     : [];
+  // 活跃站点排序：默认按可用性百分比降序（null 排最后，同百分比按请求次数降序）；
+  // 可切回原有按请求次数降序。未使用站点固定排在活跃站点之后。
   const activeSites = rawSiteAvailability
     .filter((s) => s.totalRequests > 0)
-    .sort((a, b) => (b.totalRequests || 0) - (a.totalRequests || 0));
+    .sort((a, b) => {
+      if (siteSortMode === "availability") {
+        const aAvailability =
+          typeof a.availabilityPercent === "number" &&
+          Number.isFinite(a.availabilityPercent)
+            ? a.availabilityPercent
+            : -1;
+        const bAvailability =
+          typeof b.availabilityPercent === "number" &&
+          Number.isFinite(b.availabilityPercent)
+            ? b.availabilityPercent
+            : -1;
+        if (bAvailability !== aAvailability) return bAvailability - aAvailability;
+      }
+      return (b.totalRequests || 0) - (a.totalRequests || 0);
+    });
   const inactiveSites = rawSiteAvailability.filter(
     (s) => !s.totalRequests || s.totalRequests === 0,
   );
@@ -1076,10 +1119,27 @@ export default function Dashboard({
               </span>
             </div>
             <div className="site-observability-subtitle">
-              最近 24 小时 · 每色块 = 1h · 按使用量排序
+              最近 24 小时 · 每色块 = 1h ·{" "}
+              {siteSortMode === "availability"
+                ? "按可用性排序"
+                : "按使用量排序"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <select
+              className="site-observability-sort-select"
+              value={siteSortMode}
+              onChange={(event) => {
+                const nextMode: SiteSortMode =
+                  event.target.value === "requests" ? "requests" : "availability";
+                setSiteSortMode(nextMode);
+                persistSiteSortMode(nextMode);
+              }}
+              aria-label="站点排序方式"
+            >
+              <option value="availability">按可用性百分比</option>
+              <option value="requests">按请求次数</option>
+            </select>
             <div className="site-observability-legend">
               <span className="site-observability-legend-text">低</span>
               <span

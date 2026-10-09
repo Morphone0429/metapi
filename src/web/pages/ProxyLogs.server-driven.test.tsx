@@ -268,7 +268,7 @@ describe('ProxyLogs server-driven page', () => {
       expect(apiMock.getProxyLogs).toHaveBeenCalledWith({
         limit: 50,
         offset: 0,
-        status: 'all',
+        status: 'success',
         search: '',
       });
 
@@ -1056,7 +1056,7 @@ describe('ProxyLogs server-driven page', () => {
       expect(apiMock.getProxyLogs).toHaveBeenCalledWith({
         limit: 50,
         offset: 0,
-        status: 'all',
+        status: 'success',
         search: '',
         siteId: 9,
         client: 'family:codex',

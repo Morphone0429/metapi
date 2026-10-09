@@ -82,6 +82,8 @@ type StoredDebugPreviewPayload = {
 
 const PAGE_SIZES = [20, 50, 100];
 const DEFAULT_PAGE_SIZE = 50;
+// 使用日志默认选中「成功」：无 status 参数时按此默认，且默认值不写入 URL
+const DEFAULT_STATUS_FILTER: ProxyLogStatusFilter = "success";
 const TRACE_TABLE_LIMIT = 20;
 const DEBUG_TRACE_PAGE_SIZE = 5;
 const PROXY_LOGS_DEBUG_TRACE_PANEL_STORAGE_KEY =
@@ -423,7 +425,8 @@ function normalizeRoutePageSize(raw: string | null): number {
 
 function normalizeRouteStatus(raw: string | null): ProxyLogStatusFilter {
   if (raw === "success" || raw === "failed") return raw;
-  return "all";
+  if (raw === "all") return "all";
+  return DEFAULT_STATUS_FILTER;
 }
 
 function normalizeRouteSearch(raw: string | null): string {
@@ -478,7 +481,8 @@ function buildProxyLogsRouteSearch(input: {
   if (input.page > 1) params.set("page", String(input.page));
   if (input.pageSize !== DEFAULT_PAGE_SIZE)
     params.set("pageSize", String(input.pageSize));
-  if (input.status !== "all") params.set("status", input.status);
+  if (input.status !== DEFAULT_STATUS_FILTER)
+    params.set("status", input.status);
   if (input.search.trim()) params.set("q", input.search.trim());
   if (input.client.trim()) params.set("client", input.client.trim());
   if (input.siteId) params.set("siteId", String(input.siteId));
@@ -1755,7 +1759,7 @@ export default function ProxyLogs() {
         type="button"
         className="btn btn-ghost proxy-logs-filter-reset"
         onClick={() => {
-          setStatusFilter("all");
+          setStatusFilter(DEFAULT_STATUS_FILTER);
           setClientFilter("");
           setSiteFilter(null);
           setFromInput("");

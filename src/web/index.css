@@ -6121,6 +6121,34 @@ textarea {
   background: var(--color-primary-soft, color-mix(in srgb, var(--color-primary) 8%, transparent));
 }
 
+.site-observability-sort-select {
+  padding: 4px 26px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  white-space: nowrap;
+}
+
+.site-observability-sort-select:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.site-observability-sort-select:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft, color-mix(in srgb, var(--color-primary) 18%, transparent));
+}
+
 /* Grid layout: 2 columns by default, 3 on wide screens */
 .site-observability-grid {
   display: grid;
