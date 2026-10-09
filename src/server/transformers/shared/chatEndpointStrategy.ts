@@ -4,6 +4,7 @@ import {
   buildMinimalJsonHeadersForCompatibility,
   isEndpointDispatchDeniedError,
   isEndpointDowngradeError,
+  isResponsesImageUrlObjectTypeError,
   isUnsupportedMediaTypeError,
   promoteResponsesCandidateAfterLegacyChatError,
   type CompatibilityEndpoint,
@@ -130,6 +131,11 @@ export function createChatEndpointStrategy(input: CreateChatEndpointStrategyInpu
       return (
         ctx.response.status >= 500
         || isEndpointDowngradeError(ctx.response.status, ctx.rawErrText)
+        || (
+          input.downstreamFormat === 'openai'
+          && ctx.request.endpoint === 'responses'
+          && isResponsesImageUrlObjectTypeError(ctx.response.status, ctx.rawErrText)
+        )
         || isMessagesRequiredError(ctx.rawErrText)
         || isEndpointDispatchDeniedError(ctx.response.status, ctx.rawErrText)
       );

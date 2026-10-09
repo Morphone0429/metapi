@@ -121,12 +121,20 @@ function normalizeResponsesContentItem(
   }
 
   if (type === 'input_image' || type === 'image_url') {
-    const imageUrl = normalizeImageUrlValue(item.image_url) ?? normalizeImageUrlValue(item.url);
+    const primaryImage = normalizeImageUrlValue(item.image_url);
+    const imageUrl = primaryImage ?? normalizeImageUrlValue(item.url);
     if (!imageUrl) return null;
+    // Chat 风格 image_url 是对象（{url, detail}），而 Responses 协议要求 image_url
+    // 为 URL 字符串、detail 为部件级同级字段；此处解包对象并上提 detail，
+    // 避免把对象原样发给严格 schema 校验的上游（HTTP 400: expected an image URL）。
+    const unwrappedUrl = typeof imageUrl === 'string' ? imageUrl : asTrimmedString(imageUrl.url);
+    const nestedDetail = isRecord(primaryImage) ? asTrimmedString(primaryImage.detail) : '';
+    const detail = firstNonEmptyTrimmedString(item.detail, nestedDetail);
     return {
       ...item,
+      ...(detail ? { detail } : {}),
       type: 'input_image',
-      image_url: imageUrl,
+      image_url: unwrappedUrl || imageUrl,
     };
   }
 

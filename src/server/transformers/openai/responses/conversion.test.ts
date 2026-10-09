@@ -121,6 +121,91 @@ describe('responses conversion single source of truth', () => {
   });
 });
 
+describe('normalizeResponsesInputForCompatibility image_url unwrapping', () => {
+  it('unwraps Chat-style image_url objects into Responses URL strings and hoists detail', () => {
+    const normalized = normalizeResponsesInputForCompatibility([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look at this' },
+          { type: 'image_url', image_url: { url: 'https://example.com/pic.png', detail: 'auto' } },
+        ],
+      },
+    ]);
+
+    expect(normalized).toEqual([
+      expect.objectContaining({
+        type: 'message',
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'look at this' },
+          { type: 'input_image', image_url: 'https://example.com/pic.png', detail: 'auto' },
+        ],
+      }),
+    ]);
+  });
+
+  it('keeps Responses-native string image_url and part-level detail untouched', () => {
+    const normalized = normalizeResponsesInputForCompatibility([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: 'https://example.com/pic.png', detail: 'low' },
+        ],
+      },
+    ]);
+
+    expect(normalized).toEqual([
+      expect.objectContaining({
+        type: 'message',
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: 'https://example.com/pic.png', detail: 'low' },
+        ],
+      }),
+    ]);
+  });
+
+  it('leaves image_url objects without an extractable URL untouched instead of inventing an empty string', () => {
+    const normalized = normalizeResponsesInputForCompatibility([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: { file_id: 'file-1' } },
+        ],
+      },
+    ]);
+
+    const message = (normalized as Array<Record<string, unknown>>)[0];
+    const content = message.content as Array<Record<string, unknown>>;
+    expect(content[0]).toEqual({ type: 'input_image', image_url: { file_id: 'file-1' } });
+  });
+
+  it('converts Chat image_url objects to Responses string form end-to-end', () => {
+    const body = convertOpenAiBodyToResponsesBody(
+      {
+        model: 'gpt-test',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'hi' },
+              { type: 'image_url', image_url: { url: 'https://example.com/pic.png' } },
+            ],
+          },
+        ],
+      },
+      'gpt-test',
+      false,
+    );
+
+    const input = body.input as Array<Record<string, unknown>>;
+    const message = input.find((item) => item.type === 'message') as Record<string, unknown>;
+    const content = message.content as Array<Record<string, unknown>>;
+    expect(content[1]).toEqual({ type: 'input_image', image_url: 'https://example.com/pic.png' });
+  });
+});
+
 describe('sanitizeResponsesBodyForProxy', () => {
   it('preserves newer Responses request fields needed by the proxy', () => {
     const result = sanitizeResponsesBodyForProxy(

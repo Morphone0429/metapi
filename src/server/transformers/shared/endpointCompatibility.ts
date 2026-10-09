@@ -257,6 +257,15 @@ export function promoteResponsesCandidateAfterLegacyChatError(
   endpointCandidates.splice(currentIndex + 1, 0, 'responses');
 }
 
+export function isResponsesImageUrlObjectTypeError(
+  status: number,
+  upstreamErrorText?: string | null,
+): boolean {
+  if (status !== 400) return false;
+  return /invalid type for ['"]?input\[\d+\]\.content\[\d+\]\.image_url['"]?:\s*expected an image url,\s*but got an object instead\b/i
+    .test(upstreamErrorText || '');
+}
+
 export function isEndpointDowngradeError(status: number, upstreamErrorText?: string | null): boolean {
   if (status < 400) return false;
   const parsed = parseEndpointErrorShape(upstreamErrorText);

@@ -4,6 +4,8 @@ import {
   hasEndpointMismatchHint,
   inferRequiredEndpointFromProtocolError,
   inferSuggestedEndpointFromUpstreamError,
+  isEndpointDowngradeError,
+  isResponsesImageUrlObjectTypeError,
   promoteRequiredEndpointCandidateAfterProtocolError,
 } from './endpointCompatibility.js';
 
@@ -33,6 +35,34 @@ describe('inferSuggestedEndpointFromUpstreamError', () => {
   it('infers suggested endpoints from explicit upstream endpoint mentions', () => {
     expect(inferSuggestedEndpointFromUpstreamError('Unsupported endpoint /v1/messages')).toBe('messages');
     expect(inferSuggestedEndpointFromUpstreamError('POST /v1/responses is not supported')).toBe('responses');
+  });
+});
+
+describe('isResponsesImageUrlObjectTypeError', () => {
+  const upstreamError = "[upstream:/v1/responses] Upstream returned HTTP 400: Invalid type for 'input[0].content[1].image_url': expected an image URL, but got an object instead.";
+
+  it('matches the precise image_url object mismatch and no other schema error', () => {
+    expect(isResponsesImageUrlObjectTypeError(400, upstreamError)).toBe(true);
+    expect(isResponsesImageUrlObjectTypeError(400, JSON.stringify({
+      error: {
+        type: 'upstream_error',
+        message: "Invalid type for 'input[12].content[3].image_url': expected an image URL, but got an object instead.",
+      },
+    }))).toBe(true);
+    expect(isResponsesImageUrlObjectTypeError(400, "Invalid type for 'input[0].content[1].image_url': expected a string, but got an object instead.")).toBe(false);
+    expect(isResponsesImageUrlObjectTypeError(400, "Invalid type for 'input[0].content[1].text': expected an image URL, but got an object instead.")).toBe(false);
+    expect(isEndpointDowngradeError(400, upstreamError)).toBe(false);
+  });
+
+  it('rejects other statuses, authentication failures, and quota failures', () => {
+    expect(isResponsesImageUrlObjectTypeError(401, upstreamError)).toBe(false);
+    expect(isResponsesImageUrlObjectTypeError(402, upstreamError)).toBe(false);
+    expect(isResponsesImageUrlObjectTypeError(400, JSON.stringify({
+      error: { type: 'authentication_error', message: 'invalid_api_key' },
+    }))).toBe(false);
+    expect(isResponsesImageUrlObjectTypeError(400, JSON.stringify({
+      error: { type: 'upstream_error', message: 'insufficient_quota' },
+    }))).toBe(false);
   });
 });
 
